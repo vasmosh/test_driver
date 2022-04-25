@@ -12,9 +12,18 @@
 
 #include <linux/proc_fs.h>
 
+#include <linux/module.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #define MY_MAJOR_NUM (115)
 #define DRIVER_NAME "hello"
+
+static struct proc_dir_entry *proc_dir_root = NULL;
+static struct proc_dir_entry *proc_dir_devices1 = NULL;
+static struct proc_dir_entry *proc_dir_devices2 = NULL;
+static struct proc_dir_entry *proc_dir_devices3 = NULL;
+
 
 
 long fops_ioctl(struct file *p_file, unsigned int cmd, unsigned long arg){
@@ -87,16 +96,36 @@ module_param(POWER2, int, 0);
 
 
 
-struct hrtimer hrtimer_test;
-unsigned int count;
-ktime_t m_kt;
-int value = 2000;
+static int open_device_info(struct inode *, struct file *);
+static ssize_t read_file_all(struct file *, char __user *, size_t, loff_t *);
+static int release_file_all(struct inode *, struct file *);
 
-static enum hrtimer_restart  hrtimer_test_poll(struct hrtimer *timer){
-    printk("============ count = %d ========== \n", count++);
-    hrtimer_forward(timer, timer->base->get_time(), m_kt);
-    return HRTIMER_NORESTART;
+struct private_data {
+    size_t length;
+    struct mutex lock;
+    char data_for_user[0];
+};
+
+
+
+static int hello_proc_show(struct seq_file *m, void *v) {
+    seq_printf(m, "Hello proc!\n");
+    return 0;
 }
+
+static int hello_proc_open(struct inode *inode, struct  file *file) {
+    return single_open(file, hello_proc_show, NULL);
+}
+
+
+
+static const struct proc_ops myprocfops = {
+        .proc_open = hello_proc_open,
+        .proc_read = seq_read,
+//        .proc_release = single_release,
+};
+
+
 
 
 int mydev_init(void){
@@ -106,19 +135,23 @@ int mydev_init(void){
     struct proc_dir_entry *dev_dir = NULL;
     register_chrdev(MY_MAJOR_NUM, DRIVER_NAME, &fops);
 
-    hrtimer_init(&hrtimer_test, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-    hrtimer_test.function = hrtimer_test_poll;
-    m_kt = ktime_set(value/1000, (value % 1000)*1000000);
-    hrtimer_start(&hrtimer_test, m_kt, HRTIMER_MODE_REL);
+    proc_dir_root = proc_mkdir(DRIVER_NAME, NULL);
 
+    proc_dir_devices1 = proc_mkdir("folder1", proc_dir_root);
+    proc_dir_devices2 = proc_mkdir("folder2", proc_dir_root);
+    proc_dir_devices3 = proc_mkdir("folder3", proc_dir_root);
+
+    proc_create("hello_proc", 0444, proc_dir_devices1, &myprocfops);
+    proc_create("hello_proc", 0444, proc_dir_devices2, &myprocfops);
 
     return 0;
 }
 
 void mydev_exit(void){
+
+    remove_proc_subtree("hello", NULL);
     printk("exit my drive \n");
     unregister_chrdev(MY_MAJOR_NUM, DRIVER_NAME);
-    hrtimer_cancel(&hrtimer_test);
 
 }
 
